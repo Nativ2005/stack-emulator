@@ -8,6 +8,8 @@ const EXAMPLES = [
 ; The stack is LIFO: Last In, First Out.
 
 main:
+    push ebp            ; prologue: save the caller's EBP
+    mov ebp, esp        ;           EBP = base of this function's frame
     mov eax, 0x11111111
     mov ebx, 0x22222222
     push eax            ; ESP -= 4 ; [ESP] = EAX
@@ -17,6 +19,7 @@ main:
     pop edx             ; EDX = 0x22222222
     pop esi             ; ESI = 0x11111111
     xor eax, eax        ; return 0
+    pop ebp             ; epilogue: restore the caller's EBP
     ret                 ; return from main -> program exits
 `,
   },
@@ -70,9 +73,12 @@ main:
 ; Watch a new stack frame appear for every recursive call.
 
 main:
+    push ebp            ; prologue: save the caller's EBP
+    mov ebp, esp        ;           EBP = base of this function's frame
     push 4
     call fact           ; fact(4)
     add esp, 4
+    pop ebp
     ret                 ; EAX = 24
 
 fact:
@@ -152,6 +158,8 @@ pad:
     ret                     ; returns into win()
 
 win:
+    push ebp            ; prologue: save the caller's EBP
+    mov ebp, esp        ;           EBP = base of this function's frame
     mov eax, 0x1337         ; you win!
     hlt
 `,
@@ -162,7 +170,10 @@ win:
 ; "Stack playground" panel to push / pop by hand.
 
 main:
-    nop
+    push ebp            ; prologue: save the caller's EBP
+    mov ebp, esp        ;           EBP = base of this function's frame
+    nop                 ; your code here
+    pop ebp
     ret
 `,
   },
