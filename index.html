@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>x86 Stack Emulator</title>
+  <meta name="description" content="Interactive x86 (32-bit) stack emulator: push, pop, call, ret, EBP/ESP/EIP, stack frames, and buffer overflows, step by step.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">▤</span>
+      <div>
+        <h1>x86 Stack Emulator</h1>
+        <p class="sub">32-bit · Intel syntax · watch ESP, EBP and EIP move</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <label class="sel">
+        <span>Example</span>
+        <select id="exampleSelect"></select>
+      </label>
+      <button id="themeBtn" class="ghost" title="Toggle light/dark">◐</button>
+      <a class="ghost btnlink" href="https://github.com/Nativ2005/stack-emulator" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </header>
+
+  <main class="grid">
+    <!-- CODE -->
+    <section class="panel code-panel">
+      <div class="panel-head">
+        <h2>Code</h2>
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="editor" role="tab">Editor</button>
+          <button class="tab" data-tab="listing" role="tab">Listing</button>
+        </div>
+      </div>
+      <div id="editorWrap" class="editor-wrap">
+        <pre id="gutter" class="gutter" aria-hidden="true"></pre>
+        <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"></textarea>
+      </div>
+      <div id="listing" class="listing" hidden></div>
+      <div id="asmErrors" class="asm-errors" hidden></div>
+
+      <div class="controls">
+        <button id="btnAssemble" class="primary" title="Ctrl+Enter">Assemble &amp; Load</button>
+        <div class="btn-row">
+          <button id="btnBack" title="Step back (←)">◀ Back</button>
+          <button id="btnStep" title="Step (→)">Step ▶</button>
+          <button id="btnRun" title="Run / pause">Run ▶▶</button>
+          <button id="btnReset" title="Reset machine">⟲ Reset</button>
+        </div>
+        <label class="speed">Speed <input id="speed" type="range" min="1" max="30" value="4"><span id="speedVal">4/s</span></label>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+
+    <!-- STACK -->
+    <section class="panel stack-panel">
+      <div class="panel-head">
+        <h2>Stack <span class="muted">(high addresses on top, grows ↓)</span></h2>
+      </div>
+      <div class="legend">
+        <span><i class="sw sw-frame"></i>current frame</span>
+        <span><i class="sw sw-ret"></i>return address</span>
+        <span><i class="sw sw-ebp"></i>saved EBP</span>
+        <span><i class="sw sw-free"></i>free (below ESP)</span>
+        <span><i class="sw sw-bad"></i>overwritten</span>
+      </div>
+      <div class="stack-cols"><span></span><span>address</span><span>offset</span><span>value</span><span>ascii</span><span>what is it</span></div>
+      <div id="stackView" class="stack-view"></div>
+    </section>
+
+    <!-- SIDE -->
+    <section class="side">
+      <div class="panel">
+        <div class="panel-head"><h2>Registers</h2></div>
+        <div id="regs" class="regs"></div>
+        <div id="flags" class="flags"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Stack playground</h2></div>
+        <p class="hint">Run single instructions by hand. EIP is not advanced.</p>
+        <div class="pg-row">
+          <input id="pushVal" placeholder="value, e.g. 0x41414141, 42, eax" value="0xdeadbeef">
+          <button id="btnPush">push</button>
+        </div>
+        <div class="pg-row">
+          <select id="popReg"></select>
+          <button id="btnPop">pop</button>
+        </div>
+        <div class="pg-row">
+          <input id="execLine" placeholder="any instruction, e.g. mov eax, [esp+4]">
+          <button id="btnExec">exec</button>
+        </div>
+      </div>
+
+      <div class="panel explain-panel">
+        <div class="panel-head"><h2>What just happened</h2><button id="btnClearLog" class="ghost small">clear</button></div>
+        <div id="explainNow" class="explain-now"></div>
+        <ol id="log" class="log" reversed></ol>
+      </div>
+    </section>
+  </main>
+
+  <section class="panel ref">
+    <details>
+      <summary>Instruction reference &amp; syntax</summary>
+      <div class="ref-grid">
+        <div>
+          <h3>Stack &amp; control flow</h3>
+          <table>
+            <tr><td><code>push x</code></td><td>ESP −= 4; [ESP] = x</td></tr>
+            <tr><td><code>pop r</code></td><td>r = [ESP]; ESP += 4</td></tr>
+            <tr><td><code>call f</code></td><td>push next EIP; jmp f</td></tr>
+            <tr><td><code>ret [n]</code></td><td>pop EIP; ESP += n</td></tr>
+            <tr><td><code>leave</code></td><td>mov esp, ebp; pop ebp</td></tr>
+            <tr><td><code>jmp l</code></td><td>EIP = l</td></tr>
+            <tr><td><code>je jne jl jg jle jge jb ja jbe jae js jns</code> (+ aliases)</td><td>conditional jumps</td></tr>
+            <tr><td><code>hlt</code>, <code>nop</code></td><td>stop / do nothing</td></tr>
+          </table>
+        </div>
+        <div>
+          <h3>Data &amp; arithmetic</h3>
+          <table>
+            <tr><td><code>mov d, s</code></td><td>d = s</td></tr>
+            <tr><td><code>lea r, [addr]</code></td><td>r = address (no memory read)</td></tr>
+            <tr><td><code>add sub and or xor</code></td><td>d = d op s, sets flags</td></tr>
+            <tr><td><code>cmp test</code></td><td>sub / and, flags only</td></tr>
+            <tr><td><code>inc dec neg not</code></td><td>unary</td></tr>
+            <tr><td><code>shl shr sar</code></td><td>shifts (imm or cl)</td></tr>
+            <tr><td><code>imul r, s [, imm]</code></td><td>signed multiply</td></tr>
+            <tr><td><code>xchg a, b</code></td><td>swap</td></tr>
+          </table>
+        </div>
+        <div>
+          <h3>Syntax</h3>
+          <ul>
+            <li>Registers: <code>eax ebx ecx edx esi edi ebp esp</code>, bytes <code>al ah bl …</code></li>
+            <li>Numbers: <code>42</code>, <code>-8</code>, <code>0x1f</code>, <code>1fh</code>, <code>0b101</code>, <code>'A'</code></li>
+            <li>Memory: <code>[ebp-8]</code>, <code>[esp+4]</code>, <code>[eax+ecx*4+8]</code></li>
+            <li>Size: <code>dword [ebp-4]</code> / <code>byte ptr [edi]</code> (default dword)</li>
+            <li>Labels: <code>name:</code>, local <code>.loop:</code>; execution starts at <code>main</code></li>
+            <li>Comments: <code>;</code> or <code>#</code></li>
+            <li>Only the stack (<span id="stackRange"></span>) is mapped memory. Anything else faults.</li>
+            <li>Keys: <kbd>Ctrl</kbd>+<kbd>Enter</kbd> assemble, <kbd>→</kbd> step, <kbd>←</kbd> back.</li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <footer class="foot">An educational model of the x86 stack. Instruction sizes and addresses are approximations of real encodings.</footer>
+
+  <script src="js/cpu.js"></script>
+  <script src="js/examples.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
