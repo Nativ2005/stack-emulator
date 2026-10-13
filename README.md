@@ -8,6 +8,13 @@ called and returned.
 
 ## Features
 
+- **Beginner mode** (default): plain-English labels on every stack slot ("argument #1 for add()",
+  "return address: when add() finishes, go back to main()", "local variable of main()"), friendly
+  step explanations, and a simpler view. **Expert mode** adds `ebp±N` offsets, ASCII, flags and raw explanations.
+- **Intro & tooltips**: a 60-second "New to the stack?" intro with a frame diagram, and hover hints on
+  registers, slots, columns and buttons.
+- **Animations**: pushed values slide in, popped slots flash, and the ESP/EBP arrows glide to their new slot.
+- **Dec / Hex toggle** for values (addresses always stay hex).
 - **Real stack layout**: high addresses on top, the stack grows down. `ESP`/`EBP` pointers,
   offsets relative to `EBP` (`ebp+8`, `ebp-4`, …), hex values and ASCII view.
 - **Registers**: `EAX EBX ECX EDX ESI EDI ESP EBP EIP` plus `ZF SF CF OF` flags; changed values are highlighted.

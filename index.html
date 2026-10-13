@@ -24,10 +24,40 @@
         <span>Example</span>
         <select id="exampleSelect"></select>
       </label>
-      <button id="themeBtn" class="ghost" title="Toggle light/dark">◐</button>
+      <div class="seg" id="modeSeg" data-tip="Beginner: plain-English labels and explanations, fewer columns. Expert: raw details (offsets, ASCII, flags).">
+        <button data-mode="beginner">Beginner</button><button data-mode="expert">Expert</button>
+      </div>
+      <div class="seg" id="numSeg" data-tip="Show values as decimal (normal numbers) or hexadecimal (base 16, how programmers usually write memory). Addresses are always hex.">
+        <button data-num="dec">Dec</button><button data-num="hex">Hex</button>
+      </div>
+      <button id="introBtn" class="ghost" data-tip="Show the 60-second introduction again">? Intro</button>
+      <button id="themeBtn" class="ghost" data-tip="Toggle light / dark theme">◐</button>
       <a class="ghost btnlink" href="https://github.com/Nativ2005/stack-emulator" target="_blank" rel="noopener">GitHub</a>
     </div>
   </header>
+
+  <section id="intro" class="panel intro">
+    <div class="panel-head">
+      <h2>New to the stack? Start here</h2>
+      <button id="introClose" class="ghost small">Got it ✕</button>
+    </div>
+    <div class="intro-grid">
+      <div class="card"><h3>📚 What is the stack?</h3><p>A part of memory that works like a pile of plates: you only add (<b>push</b>) or remove (<b>pop</b>) at the top. Last in, first out.</p></div>
+      <div class="card"><h3>⬇ It grows downward</h3><p>On x86 the top of the stack has the <b>lowest</b> address. <b>push</b> makes ESP smaller, <b>pop</b> makes it bigger. In the view, the newest value is at the bottom, next to the <b class="c-esp">ESP</b> arrow.</p></div>
+      <div class="card"><h3>🧭 Three key registers</h3><p><b class="c-esp">ESP</b> points at the top of the stack.<br><b class="c-ebp">EBP</b> is the fixed anchor of the current function.<br><b class="c-eip">EIP</b> is the address of the next instruction.</p></div>
+      <div class="card"><h3>📞 call &amp; ret</h3><p><b>call f</b> pushes the <b class="c-ret">return address</b> (where to come back) and jumps to f. <b>ret</b> pops it and jumps back. Overwrite it and the program goes somewhere else!</p></div>
+      <div class="card frame-card"><h3>🧱 One function's frame</h3>
+<pre><span class="muted">higher addresses</span>
+[ebp+12]  <span class="c-arg">argument #2</span>
+[ebp+8]   <span class="c-arg">argument #1</span>
+[ebp+4]   <span class="c-ret">return address</span>
+[ebp]     <span class="c-ebp">saved EBP</span>      ◀ <b class="c-ebp">EBP</b>
+[ebp-4]   <span class="c-local">local variable</span>
+[ebp-8]   <span class="c-local">local variable</span> ◀ <b class="c-esp">ESP</b>
+<span class="muted">lower addresses</span></pre></div>
+      <div class="card"><h3>▶ Try it</h3><p>Pick an example, press <b>Step ▶</b> and read <i>What just happened</i>. <b>◀ Back</b> undoes a step. Hover over anything for a hint.</p></div>
+    </div>
+  </section>
 
   <main class="grid">
     <!-- CODE -->
@@ -62,16 +92,17 @@
     <!-- STACK -->
     <section class="panel stack-panel">
       <div class="panel-head">
-        <h2>Stack <span class="muted">(high addresses on top, grows ↓)</span></h2>
+        <h2>Stack <span class="muted">(high addresses on top, grows ↓ toward ESP)</span></h2>
       </div>
       <div class="legend">
-        <span><i class="sw sw-frame"></i>current frame</span>
-        <span><i class="sw sw-ret"></i>return address</span>
-        <span><i class="sw sw-ebp"></i>saved EBP</span>
-        <span><i class="sw sw-free"></i>free (below ESP)</span>
-        <span><i class="sw sw-bad"></i>overwritten</span>
+        <span data-tip="The area of the stack used by the function that is running right now (from ESP up to EBP)."><i class="sw sw-frame"></i>current function</span>
+        <span data-tip="Saved by &quot;call&quot;: the address where the program continues after the function returns."><i class="sw sw-ret"></i>return address</span>
+        <span data-tip="Saved by &quot;push ebp&quot; at the start of a function so the caller's EBP can be restored."><i class="sw sw-ebp"></i>saved EBP</span>
+        <span data-tip="Values pushed by the caller right before &quot;call&quot;: the function's inputs."><i class="sw sw-arg"></i>argument</span>
+        <span data-tip="Below ESP: no longer part of the stack. Old values stay until overwritten."><i class="sw sw-free"></i>free</span>
+        <span data-tip="An important value that was overwritten, e.g. by a buffer overflow."><i class="sw sw-bad"></i>overwritten</span>
       </div>
-      <div class="stack-cols"><span></span><span>address</span><span>offset</span><span>value</span><span>ascii</span><span>what is it</span></div>
+      <div class="stack-cols"><span data-tip="Arrows show where ESP (top of stack) and EBP (frame anchor) point.">pointers</span><span data-tip="Every slot is 4 bytes, so addresses go up/down in steps of 4. Higher addresses are on top.">address</span><span class="col-off" data-tip="Position relative to EBP, the way the code refers to it, e.g. [ebp+8].">offset</span><span data-tip="The 32-bit number stored in this slot.">value</span><span class="col-ascii" data-tip="The same 4 bytes read as text characters (little-endian: lowest address first).">ascii</span><span data-tip="What this slot is used for.">what is it</span></div>
       <div id="stackView" class="stack-view"></div>
     </section>
 
@@ -80,7 +111,7 @@
       <div class="panel">
         <div class="panel-head"><h2>Registers</h2></div>
         <div id="regs" class="regs"></div>
-        <div id="flags" class="flags"></div>
+        <div id="flags" class="flags expert-only"></div>
       </div>
 
       <div class="panel">
@@ -88,15 +119,15 @@
         <p class="hint">Run single instructions by hand. EIP is not advanced.</p>
         <div class="pg-row">
           <input id="pushVal" placeholder="value, e.g. 0x41414141, 42, eax" value="0xdeadbeef">
-          <button id="btnPush">push</button>
+          <button id="btnPush" data-tip="Put this value on top of the stack (ESP moves down 4)">push</button>
         </div>
         <div class="pg-row">
           <select id="popReg"></select>
-          <button id="btnPop">pop</button>
+          <button id="btnPop" data-tip="Take the top value off the stack into the chosen register (ESP moves up 4)">pop</button>
         </div>
         <div class="pg-row">
           <input id="execLine" placeholder="any instruction, e.g. mov eax, [esp+4]">
-          <button id="btnExec">exec</button>
+          <button id="btnExec" data-tip="Run this one instruction right now">exec</button>
         </div>
       </div>
 
@@ -157,6 +188,7 @@
 
   <footer class="foot">An educational model of the x86 stack. Instruction sizes and addresses are approximations of real encodings.</footer>
 
+  <div id="tip" class="tip" role="tooltip" hidden></div>
   <script src="js/cpu.js"></script>
   <script src="js/examples.js"></script>
   <script src="js/app.js"></script>

@@ -288,20 +288,27 @@ const Emu = (() => {
       this.steps = 0;
       this.writes = new Set();
       this.writeRaw(STACK_TOP - 4, 4, EXIT_ADDR);
-      this.tags[STACK_TOP - 4] = { kind: 'ret', text: 'return address → __libc_start_main (whoever called main)' };
+      this.calls = [];   // active function calls: { fn, retSlot }
+      this.entryName = this.sym(this.prog.entry) || 'main';
+      this.tags[STACK_TOP - 4] = {
+        kind: 'ret', fn: this.entryName,
+        text: 'return address → __libc_start_main (whoever called main)',
+        plain: `return address: when ${this.entryName}() finishes, the program ends`,
+      };
     }
 
     snapshot() {
       return {
         regs: { ...this.regs }, eip: this.eip, flags: { ...this.flags }, mem: this.mem.slice(),
         tags: JSON.parse(JSON.stringify(this.tags)), low: this.low, status: this.status,
-        message: this.message, steps: this.steps,
+        message: this.message, steps: this.steps, calls: this.calls.map(c => ({ ...c })),
       };
     }
     restore(s) {
       Object.assign(this, {
         regs: { ...s.regs }, eip: s.eip, flags: { ...s.flags }, mem: s.mem.slice(),
         tags: JSON.parse(JSON.stringify(s.tags)), low: s.low, status: s.status, message: s.message, steps: s.steps,
+        calls: s.calls.map(c => ({ ...c })),
       });
       this.writes = new Set();
     }
@@ -444,22 +451,38 @@ const Emu = (() => {
       }
       return r;
     }
+    /* ---- function / frame bookkeeping (used for plain-English labels) */
+    curFn() { return this.calls.length ? this.calls[this.calls.length - 1].fn : this.entryName; }
+    callerFn() {
+      const n = this.calls.length;
+      return n >= 2 ? this.calls[n - 2].fn : n === 1 ? this.entryName : null;
+    }
+    /* Which function's frame a stack slot belongs to. */
+    ownerOf(a) {
+      for (let i = this.calls.length - 1; i >= 0; i--) if (a < this.calls[i].retSlot) return this.calls[i].fn;
+      return this.entryName;
+    }
+    baseName(addr) { const s = this.sym(addr); return s ? s.replace(/\+.*$/, '') : null; }
+
     run(ins, next, manual) {
       this.writes = new Set();
       const start = this.eip;
+      const pre = { regs: { ...this.regs }, eip: start, next, fn: this.curFn() };
       this.eip = next;
-      let text;
+      let text, plain;
       try {
         text = this.exec(ins);
         this.steps++;
+        this.calls = this.calls.filter(c => c.retSlot >= this.regs.esp);
+        plain = this.plain(ins, pre) || text;
       } catch (e) {
         if (!(e instanceof Fault)) throw e;
         this.eip = start;
         this.status = 'fault';
         this.message = e.message;
-        return { ins, text: e.message, fault: true };
+        return { ins, text: e.message, plain: '💥 Crash! ' + e.message.replace(/^Segmentation fault: /, 'The program tried a ') + '. Only the stack is real memory in this emulator.', fault: true };
       }
-      if (this.status === 'halted') return { ins, text };
+      if (this.status === 'halted') return { ins, text, plain };
       if (this.eip === EXIT_ADDR) {
         this.status = 'exited';
         this.message = `Program returned from main → exited with EAX = ${this.regs.eax} (${hex(this.regs.eax)})`;
@@ -471,7 +494,114 @@ const Emu = (() => {
           ? 'Execution ran past the last instruction (forgot a "ret" or "hlt"?)'
           : `Segmentation fault: EIP = ${hex(this.eip)} is not a valid instruction address${ascii}`;
       } else if (this.status !== 'exited') this.status = 'ready';
-      return { ins, text };
+      return { ins, text, plain };
+    }
+
+    /* ---- friendly, jargon-light explanation of what an instruction did */
+    fv(v) {
+      const s = v | 0;
+      return Math.abs(s) < 1e6 ? String(s) : hex(v);
+    }
+    describe(o) {
+      if (o.t === 'reg') return o.reg.toUpperCase();
+      if (o.t === 'reg8') return `${o.text.toUpperCase()} (one byte of ${o.reg.toUpperCase()})`;
+      if (o.t === 'imm') return this.fv(o.value);
+      if (o.t === 'label') return `the address of ${o.name}`;
+      if (o.base === 'ebp' && !o.index) {
+        const d = o.disp;
+        if (d >= 8 && d % 4 === 0) return `argument #${(d - 8) / 4 + 1} [ebp+${d}]`;
+        if (d === 4) return 'the return-address slot [ebp+4]';
+        if (d === 0) return 'the saved-EBP slot [ebp]';
+        if (d < 0) return `the local variable at [ebp${d}]`;
+      }
+      if (o.base === 'esp' && !o.index && o.disp === 0) return 'the top of the stack [esp]';
+      return `memory ${o.text}`;
+    }
+    plain(ins, pre) {
+      const a = ins.args, R = this.regs, op = ins.op, fn = pre.fn;
+      if (JCC[op]) {
+        const names = {
+          e: 'equal', ne: 'not equal', l: 'less than', ge: 'greater than or equal', le: 'less than or equal',
+          g: 'greater than', b: 'below (unsigned)', ae: 'above or equal (unsigned)', be: 'below or equal (unsigned)',
+          a: 'above (unsigned)', s: 'negative', ns: 'not negative',
+        };
+        const jumped = this.eip !== pre.next;
+        return `Checks the result of the last comparison: was it "${names[JCC[op]]}"? ` +
+          (jumped ? `Yes → jump to ${a[0].text}.` : 'No → just continue with the next line.');
+      }
+      switch (op) {
+        case 'push': {
+          const v = this.read(R.esp, 4);
+          if (a[0].t === 'reg' && a[0].reg === 'ebp')
+            return `Start of ${fn}() (the "prologue"): saves the caller's EBP on the stack so it can be restored when ${fn}() finishes. ESP moved down 4 bytes to the new top.`;
+          const what = a[0].t === 'imm' ? `the number ${this.fv(v)}` : `${this.describe(a[0])} (${this.fv(v)})`;
+          return `Put ${what} on top of the stack. The stack grows DOWN, so ESP moved down by 4 bytes (one slot) and now points at the new top.`;
+        }
+        case 'pop': {
+          const v = this.read(pre.regs.esp, 4);
+          if (a[0].t === 'reg' && a[0].reg === 'ebp')
+            return `End of ${fn}(): takes the saved EBP (${this.fv(v)}) off the stack, so EBP points at the caller's frame again. ESP moved up 4 bytes.`;
+          return `Took the top value (${this.fv(v)}) off the stack and put it into ${this.describe(a[0])}. ESP moved UP by 4 bytes; the old slot is now free space.`;
+        }
+        case 'mov': {
+          if (a[0].t === 'reg' && a[1].t === 'reg' && a[0].reg === 'ebp' && a[1].reg === 'esp')
+            return `EBP = ESP. EBP now marks the base of ${fn}()'s frame: its arguments are above it ([ebp+8], [ebp+12], …) and its local variables go below it ([ebp-4], …).`;
+          if (a[0].t === 'reg' && a[1].t === 'reg' && a[0].reg === 'esp' && a[1].reg === 'ebp')
+            return `ESP = EBP: throws away ${fn}()'s local variables in one go. ESP is back at the saved EBP.`;
+          const size = opSize(a);
+          const v = a[0].t === 'mem' ? this.read(this.ea(a[0]), size) : this.val(a[0], size);
+          if (a[1].t === 'mem') return `Read ${this.describe(a[1])}, which holds ${this.fv(v)}, and copied it into ${this.describe(a[0])}.`;
+          if (a[0].t === 'mem') return `Stored ${a[1].t === 'imm' ? this.fv(v) : `${this.describe(a[1])} (${this.fv(v)})`} into ${this.describe(a[0])}.`;
+          return `${this.describe(a[0])} = ${a[1].t === 'imm' ? this.fv(v) : `${this.describe(a[1])} = ${this.fv(v)}`}.`;
+        }
+        case 'lea':
+          return `${a[0].reg.toUpperCase()} = the ADDRESS of ${this.describe(a[1])} (${hex(R[a[0].reg])}). It now points to that slot; nothing was read from memory.`;
+        case 'add': case 'sub': case 'and': case 'or': case 'xor': {
+          if (a[0].t === 'reg' && a[0].reg === 'esp' && a[1].t === 'imm') {
+            const n = a[1].value | 0, s = n === 4 ? '' : 's';
+            if (op === 'sub') return `Made room for local variables: ESP moved down ${n} bytes (${n / 4} slot${s}). That space now belongs to ${fn}().`;
+            if (op === 'add') return `Removed ${n / 4} slot${s} from the top of the stack (ESP moved up ${n} bytes), e.g. arguments that are not needed anymore after a call.`;
+          }
+          if (op === 'xor' && a[0].t === 'reg' && a[1].t === 'reg' && a[0].reg === a[1].reg)
+            return `${a[0].reg.toUpperCase()} = 0 (XOR-ing a register with itself is a quick way to set it to zero).`;
+          const size = opSize(a), sym = { add: '+', sub: '−', and: 'AND', or: 'OR', xor: 'XOR' }[op];
+          const now = a[0].t === 'mem' ? this.read(this.ea(a[0]), size) : this.val(a[0], size);
+          const old = a[0].t === 'reg' ? pre.regs[a[0].reg] : null;
+          const rhs = a[1].t === 'imm' ? this.fv(a[1].value) : this.describe(a[1]);
+          return old !== null
+            ? `${this.describe(a[0])} = ${this.fv(old)} ${sym} ${rhs} = ${this.fv(now)}.`
+            : `${this.describe(a[0])} ${sym}= ${rhs} → now ${this.fv(now)}.`;
+        }
+        case 'cmp': case 'test': {
+          const size = opSize(a);
+          const rhs = a[1].t === 'imm' ? this.fv(a[1].value) : `${this.describe(a[1])} (${this.fv(this.val(a[1], size))})`;
+          return `Compared ${this.describe(a[0])} (${this.fv(this.val(a[0], size))}) with ${rhs}. Nothing is stored; the answer is kept in the flags for the next conditional jump.`;
+        }
+        case 'inc': case 'dec': case 'neg': case 'not': case 'imul': case 'shl': case 'sal': case 'shr': case 'sar': {
+          const size = a[0].t === 'reg8' || (a[0].t === 'mem' && a[0].size === 1) ? 1 : 4;
+          const now = a[0].t === 'mem' ? this.read(this.ea(a[0]), size) : this.val(a[0], size);
+          const what = { inc: 'Added 1', dec: 'Subtracted 1', neg: 'Flipped the sign', not: 'Flipped all bits', imul: 'Multiplied', shl: 'Shifted left', sal: 'Shifted left', shr: 'Shifted right', sar: 'Shifted right' }[op];
+          return `${what}: ${this.describe(a[0])} is now ${this.fv(now)}.`;
+        }
+        case 'call': {
+          const name = this.baseName(this.eip) || hex(this.eip), n = this.lastArgCount;
+          const args = n ? ` The ${n} value${n > 1 ? 's' : ''} pushed just before ${n > 1 ? 'are its arguments' : 'is its argument'}.` : '';
+          return `Calling ${name}(). First the CPU pushes the RETURN ADDRESS (where ${fn}() should continue afterwards), then it jumps to ${name}.${args}`;
+        }
+        case 'ret': {
+          const tag = this.tags[pre.regs.esp];
+          if (this.eip === EXIT_ADDR) return `${fn}() is finished. It returns to the code that started the program, so the program ends. Its return value (EAX) is ${this.fv(R.eax)}.`;
+          if ((tag && tag.corrupt) || !this.prog.byAddr.has(this.eip))
+            return `${fn}() tries to return, but the return address on the stack was OVERWRITTEN with ${hex(this.eip)}. The CPU blindly jumps there!`;
+          return `${fn}() is finished: the CPU takes the return address off the stack and jumps back into ${this.baseName(this.eip)}(). ESP moved up 4 bytes. Return value (EAX) = ${this.fv(R.eax)}.`;
+        }
+        case 'leave':
+          return `Cleanup at the end of ${fn}(): throws away its local variables (ESP = EBP) and restores the caller's EBP (pop ebp). ESP now points at the return address, ready for "ret".`;
+        case 'jmp': return `Jump to ${a[0].text}. (A plain jump does not touch the stack, unlike call.)`;
+        case 'nop': return 'Does nothing.';
+        case 'hlt': return `The CPU stopped (hlt). EAX = ${this.fv(R.eax)}.`;
+      }
+      return null;
     }
 
     exec(ins) {
@@ -485,8 +615,13 @@ const Emu = (() => {
         case 'push': {
           const v = this.val(a[0], 4), old = R.esp;
           const tag = a[0].t === 'reg' && a[0].reg === 'ebp'
-            ? { kind: 'ebp', text: "saved EBP (caller's frame base)" }
-            : { kind: 'push', text: `pushed ${a[0].text}` };
+            ? {
+              kind: 'ebp', fn: this.curFn(), text: "saved EBP (caller's frame base)",
+              plain: this.callerFn()
+                ? `saved EBP: remembers where ${this.callerFn()}()'s frame starts`
+                : `saved EBP of the code that started ${this.curFn()}()`,
+            }
+            : { kind: 'push', fn: this.curFn(), text: `pushed ${a[0].text}`, plain: `value pushed by ${this.curFn()}()` };
           this.push(v, tag);
           return `ESP ${hex(old)} → ${hex(R.esp)} (ESP − 4), then wrote ${hex(v)} to [ESP]. The stack grows toward LOWER addresses.`;
         }
@@ -565,7 +700,21 @@ const Emu = (() => {
         }
         case 'call': {
           const target = this.val(a[0], 4), ret = this.eip, old = R.esp;
-          this.push(ret, { kind: 'ret', text: `return address → ${this.sym(ret) || hex(ret)}` });
+          const name = this.baseName(target) || hex(target), cur = this.curFn();
+          // The values pushed right before the call (inside this frame) are its arguments.
+          let slot = R.esp, n = 0;
+          const inFrame = s => !this.inRange(R.ebp) || s < R.ebp;
+          while (n < 8 && this.inRange(slot) && this.tags[slot] && this.tags[slot].kind === 'push' && this.tags[slot].fn === cur && inFrame(slot)) {
+            n++;
+            this.tags[slot] = { kind: 'arg', fn: cur, text: `arg ${n} of ${name}`, plain: `argument #${n} for ${name}()` };
+            slot += 4;
+          }
+          this.lastArgCount = n;
+          this.push(ret, {
+            kind: 'ret', fn: name, text: `return address → ${this.sym(ret) || hex(ret)}`,
+            plain: `return address: when ${name}() finishes, go back to ${cur}()`,
+          });
+          this.calls.push({ fn: name, retSlot: R.esp });
           this.eip = target;
           return `CALL = push return address + jump. ESP ${hex(old)} → ${hex(R.esp)}, wrote the return address ${hex(ret)} (the instruction right after the call) to [ESP], then EIP = ${hex(target)}${this.sym(target) ? ' (' + this.sym(target) + ')' : ''}.`;
         }
