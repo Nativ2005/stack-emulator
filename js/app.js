@@ -176,6 +176,7 @@
 
   /* ---------------------------------------------------------- execution */
   function step() {
+    if (currentTab === 'editor' && !dirty && prog.instrs.length) showTab('listing');
     if (m.done) { render(); return false; }
     if (!prog.instrs.length) { setExplain({ text: 'No program loaded. Write some code and press "Assemble & Load".', fault: true }); return false; }
     const snap = m.snapshot();
@@ -412,15 +413,15 @@
   }
 
   const graph = new Graph.View($('graph'), { onBreakpoint: toggleBreakpoint });
-  function renderGraph() {
-    graph.update({ eip: m.eip, lastEip, breakpoints, done: m.done });
+  function renderGraph(moved = false) {
+    graph.update({ eip: m.eip, lastEip, breakpoints, done: m.done, moved });
   }
 
   function render(animate = false) {
     renderRegs(animate);
     renderStack(animate);
     renderListing();
-    renderGraph();
+    renderGraph(animate);
     renderLog();
     renderStatus();
     els.btnBack.disabled = history.length === 0;

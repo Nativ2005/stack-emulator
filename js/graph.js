@@ -135,10 +135,9 @@ const Graph = (() => {
       this.sizer = root.querySelector('.gsizer');
       this.canvas = root.querySelector('.gcanvas');
       this.sel.addEventListener('change', () => {
-        this.follow = false; this.followBox.checked = false;
         this.show(this.data.functions[this.sel.value]);
       });
-      this.followBox.addEventListener('change', () => { this.follow = this.followBox.checked; if (this.state) this.update(this.state); });
+      this.followBox.addEventListener('change', () => { this.follow = this.followBox.checked; this.browsing = false; if (this.state) this.update(this.state); });
       root.querySelectorAll('.gz').forEach(b => b.addEventListener('click', () => {
         const d = Number(b.dataset.z);
         this.setZoom(d === 0 ? this.fitZoom() : this.zoom * (d > 0 ? 1.2 : 1 / 1.2));
@@ -147,7 +146,6 @@ const Graph = (() => {
         const call = e.target.closest('.gcall');
         if (call) {
           e.stopPropagation();
-          this.follow = false; this.followBox.checked = false;
           this.show(this.data.functions.find(f => f.start === Number(call.dataset.fn)));
           return;
         }
@@ -160,12 +158,14 @@ const Graph = (() => {
       this.data = data;
       this.sel.innerHTML = data.functions.map((f, i) => `<option value="${i}">${esc(f.name)}()</option>`).join('');
       this.fn = null;
+      this.browsing = false;
       this.dirty = true;
     }
     visible() { return this.scroll.offsetParent !== null; }
 
     show(fn) {
       this.fn = fn || null;
+      this.browsing = true;   // viewing a function by hand: keep it until the CPU moves
       this.dirty = true;
       this.build();
       if (this.state) this.update(this.state);
@@ -281,7 +281,8 @@ const Graph = (() => {
       this.state = state;
       if (!this.visible()) return;
       const { eip, lastEip, breakpoints, done } = state;
-      if (this.follow) {
+      if (state.moved) this.browsing = false;
+      if (this.follow && !this.browsing) {
         const f = this.data.fnOf(eip) || (lastEip != null && this.data.fnOf(lastEip));
         if (f && f !== this.fn) { this.fn = f; this.dirty = true; }
         if (!this.fn && this.data.functions.length) { this.fn = this.data.functions[0]; this.dirty = true; }
