@@ -448,7 +448,8 @@
   EXAMPLES.forEach((ex, i) => els.example.add(new Option(ex.name, i)));
   els.example.addEventListener('change', () => {
     els.editor.value = EXAMPLES[els.example.value].code;
-    store.set('stackemu.code', els.editor.value);
+    store.set('stackemu.example', els.example.value);
+    store.set('stackemu.code', '');   // only code the user typed is remembered
     assembleAndLoad();
   });
 
@@ -470,9 +471,12 @@
 
   $('stackRange').textContent = `${hex(Emu.STACK_BASE)}–${hex(Emu.STACK_TOP - 1)}`;
   els.speedVal.textContent = `${els.speed.value}/s`;
-  const savedCode = store.get('stackemu.code');
-  if (!savedCode) els.example.value = '1';
-  els.editor.value = savedCode || EXAMPLES[1].code;
+  // Restore code the user typed; otherwise load the current version of the last example.
+  const savedEx = store.get('stackemu.example');
+  // Older versions saved every example they loaded; drop that once so updated examples show up.
+  const savedCode = savedEx === null ? '' : store.get('stackemu.code');
+  els.example.value = savedEx !== null && EXAMPLES[savedEx] ? savedEx : '1';
+  els.editor.value = savedCode || EXAMPLES[els.example.value].code;
   renderGutter();
   assembleAndLoad();
   applySettings();
