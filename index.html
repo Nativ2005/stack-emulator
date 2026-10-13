@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
   <header class="top">
@@ -67,6 +67,7 @@
         <div class="tabs" role="tablist">
           <button class="tab active" data-tab="editor" role="tab">Editor</button>
           <button class="tab" data-tab="listing" role="tab">Listing</button>
+          <button class="tab" data-tab="graph" role="tab" data-tip="Graph mode: the code as boxes connected by arrows. Green = condition true (jump taken), red = condition false, blue = always.">Graph</button>
         </div>
       </div>
       <div id="editorWrap" class="editor-wrap">
@@ -74,6 +75,7 @@
         <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"></textarea>
       </div>
       <div id="listing" class="listing" hidden></div>
+      <div id="graph" class="graph" hidden></div>
       <div id="asmErrors" class="asm-errors" hidden></div>
 
       <div class="controls">
@@ -189,8 +191,9 @@
   <footer class="foot">An educational model of the x86 stack. Instruction sizes and addresses are approximations of real encodings.</footer>
 
   <div id="tip" class="tip" role="tooltip" hidden></div>
-  <script src="js/cpu.js?v=4"></script>
-  <script src="js/examples.js?v=4"></script>
-  <script src="js/app.js?v=4"></script>
+  <script src="js/cpu.js?v=5"></script>
+  <script src="js/examples.js?v=5"></script>
+  <script src="js/graph.js?v=5"></script>
+  <script src="js/app.js?v=5"></script>
 </body>
 </html>

@@ -753,6 +753,6 @@ const Emu = (() => {
   return {
     assemble, Machine, AsmError, hex, signed,
     REG32, CODE_BASE, STACK_TOP, STACK_BASE, STACK_SIZE, EXIT_ADDR,
-    ops: Object.keys(ARITY), jcc: Object.keys(JCC),
+    ops: Object.keys(ARITY), jcc: Object.keys(JCC), JCC,
   };
 })();

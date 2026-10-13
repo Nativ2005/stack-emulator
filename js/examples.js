@@ -165,6 +165,52 @@ win:
 `,
   },
   {
+    name: '7. if / loop (cmp + jumps)',
+    code: `; cmp + conditional jumps: an if/else and a loop.
+; Open the "Graph" tab to see the code as boxes and arrows:
+;   green = condition true (jump taken), red = condition false.
+
+main:
+    push ebp
+    mov ebp, esp
+    push 9              ; argument b
+    push 4              ; argument a
+    call max            ; max(4, 9) -> 9
+    add esp, 8
+    push eax
+    call sum_to         ; 1 + 2 + ... + 9 = 45
+    add esp, 4
+    pop ebp
+    ret
+
+max:                    ; int max(int a, int b)
+    push ebp
+    mov ebp, esp
+    mov eax, [ebp+8]    ; eax = a
+    cmp eax, [ebp+12]   ; compare a with b
+    jge .done           ; if a >= b, keep a
+    mov eax, [ebp+12]   ; else eax = b
+.done:
+    pop ebp
+    ret
+
+sum_to:                 ; int sum_to(int n)
+    push ebp
+    mov ebp, esp
+    mov ecx, [ebp+8]    ; counter = n
+    xor eax, eax        ; total = 0
+.loop:
+    cmp ecx, 0
+    jle .end            ; counter <= 0 ? stop
+    add eax, ecx        ; total += counter
+    dec ecx
+    jmp .loop           ; back to the top of the loop
+.end:
+    pop ebp
+    ret
+`,
+  },
+  {
     name: 'Empty (playground)',
     code: `; Write your own code here, or leave it empty and use the
 ; "Stack playground" panel to push / pop by hand.

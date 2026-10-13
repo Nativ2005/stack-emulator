@@ -119,11 +119,16 @@
     }
   });
 
+  let currentTab = 'editor';
   function showTab(name) {
+    currentTab = name;
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
     els.editorWrap.hidden = name !== 'editor';
     els.listing.hidden = name !== 'listing';
+    $('graph').hidden = name !== 'graph';
     if (name === 'listing') renderListing(true);
+    if (name === 'graph') renderGraph();
+    store.set('stackemu.tab', name);
   }
   document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => showTab(t.dataset.tab)));
 
@@ -156,7 +161,8 @@
     breakpoints.clear();
     history = []; log = []; prevRegs = null; lastEip = null; dirty = false;
     setExplain(null);
-    showTab('listing');
+    graph.setData(Graph.analyze(prog));
+    showTab(currentTab === 'graph' ? 'graph' : 'listing');
     render();
   }
 
@@ -397,14 +403,24 @@
     const row = e.target.closest('.lst-row');
     if (!row) return;
     const a = Number(row.dataset.addr);
+    toggleBreakpoint(a);
+  });
+  function toggleBreakpoint(a) {
     breakpoints.has(a) ? breakpoints.delete(a) : breakpoints.add(a);
     renderListing();
-  });
+    renderGraph();
+  }
+
+  const graph = new Graph.View($('graph'), { onBreakpoint: toggleBreakpoint });
+  function renderGraph() {
+    graph.update({ eip: m.eip, lastEip, breakpoints, done: m.done });
+  }
 
   function render(animate = false) {
     renderRegs(animate);
     renderStack(animate);
     renderListing();
+    renderGraph();
     renderLog();
     renderStatus();
     els.btnBack.disabled = history.length === 0;
@@ -478,6 +494,7 @@
   els.example.value = savedEx !== null && EXAMPLES[savedEx] ? savedEx : '1';
   els.editor.value = savedCode || EXAMPLES[els.example.value].code;
   renderGutter();
+  if (store.get('stackemu.tab') === 'graph') currentTab = 'graph';
   assembleAndLoad();
   applySettings();
 })();

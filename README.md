@@ -14,6 +14,10 @@ called and returned.
 - **Intro & tooltips**: a 60-second "New to the stack?" intro with a frame diagram, and hover hints on
   registers, slots, columns and buttons.
 - **Animations**: pushed values slide in, popped slots flash, and the ESP/EBP arrows glide to their new slot.
+- **Graph mode** (Code → Graph): IDA-style control-flow graph, one function at a time. Code is split into
+  blocks; arrows are green (condition true / jump taken), red (condition false) or blue (always), and
+  labelled with the condition from the `cmp` (e.g. `eax > 1` / `eax <= 1`). While stepping, the current
+  line is highlighted, the arrow just taken animates, and the graph follows calls into other functions.
 - **Dec / Hex toggle** for values (addresses always stay hex).
 - **Real stack layout**: high addresses on top, the stack grows down. `ESP`/`EBP` pointers,
   offsets relative to `EBP` (`ebp+8`, `ebp-4`, …), hex values and ASCII view.
@@ -35,6 +39,7 @@ called and returned.
 4. Recursion: factorial, one frame per call
 5. Buffer overflow (crash)
 6. Buffer overflow (ret2win)
+7. if / loop (cmp + jumps): best viewed in Graph mode
 
 ## Supported instructions
 
